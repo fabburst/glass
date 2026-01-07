@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SkyRadar - Real Data Only</title>
+    <title>SkyRadar - Smart Icons</title>
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -17,20 +17,25 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f0f4f8; overflow: hidden; }
         #map { height: 100vh; width: 100%; z-index: 0; }
-        /* Glassmorphism plus poussé "Pixel Style" */
-        .glass-panel { background: rgba(255, 255, 255, 0.90); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.5); }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.6); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .card-enter { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        
+        /* Animation Urgence */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .emergency-pulse { animation: pulse-red 1.5s infinite; border-radius: 50%; }
     </style>
     
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    colors: {
-                        'm3-primary': '#006492',
-                        'm3-on-surface': '#191c1e',
-                        'm3-surface-variant': '#e1e2e8',
-                    },
+                    colors: { 'm3-primary': '#006492', 'm3-on-surface': '#191c1e', 'm3-surface-variant': '#e1e2e8' },
                     borderRadius: { '4xl': '32px' }
                 }
             }
@@ -43,26 +48,38 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- WIDGET : INDICATEUR DE MONTÉE/DESCENTE (Vario) ---
+    const getAirlineName = (callsign) => {
+        if (!callsign || callsign.length < 3) return "Aviation Générale";
+        const code = callsign.substring(0, 3).toUpperCase();
+        const airlines = {
+            'AFR': 'Air France', 'EZY': 'EasyJet', 'RYR': 'Ryanair', 'BAW': 'British Airways',
+            'DLH': 'Lufthansa', 'KLM': 'KLM', 'VLG': 'Vueling', 'TVF': 'Transavia',
+            'EZS': 'EasyJet Swiss', 'IBE': 'Iberia', 'TAP': 'TAP Portugal', 'SAS': 'SAS',
+            'SWR': 'Swiss', 'AZA': 'ITA Airways', 'UAE': 'Emirates', 'QTR': 'Qatar Airways',
+            'DAL': 'Delta', 'UAL': 'United', 'AAL': 'American Airlines', 'BEL': 'Brussels Airlines',
+            'HOP': 'Air France Hop', 'TUI': 'TUI Fly', 'WZZ': 'Wizz Air', 'N78': 'Privé (USA)'
+        };
+        return airlines[code] || `Compagnie ${code}`;
+    };
+
+    // --- WIDGET VARIO (CORRIGÉ) ---
     const VarioWidget = ({ rate }) => {
-        // rate est en m/s. 
         const isClimbing = rate > 0.5;
         const isDescending = rate < -0.5;
-        const isCruise = !isClimbing && !isDescending;
 
-        let icon = "minus";
-        let color = "text-slate-500";
-        let bg = "bg-slate-100";
-        let label = "En croisière";
+        let icon = "minus"; 
+        let color = "text-slate-500"; 
+        let bg = "bg-slate-50"; 
+        let label = "En Croisière"; // RETOUR À LA DEMANDE UTILISATEUR
 
         if (isClimbing) {
-            icon = "trending-up"; color = "text-emerald-600"; bg = "bg-emerald-50"; label = "En montée";
+            icon = "trending-up"; color = "text-emerald-600"; bg = "bg-emerald-50"; label = "Ascension";
         } else if (isDescending) {
-            icon = "trending-down"; color = "text-amber-600"; bg = "bg-amber-50"; label = "En descente";
+            icon = "trending-down"; color = "text-amber-600"; bg = "bg-amber-50"; label = "Descente";
         }
 
         return (
-            <div className={`p-4 rounded-3xl border border-white/50 shadow-sm flex flex-col justify-between h-28 ${bg}`}>
+            <div className={`p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between h-28 ${bg}`}>
                 <div className="flex justify-between items-start">
                     <span className={`text-[10px] font-bold uppercase tracking-wider ${color}`}>{label}</span>
                     <i data-lucide={icon} className={`w-5 h-5 ${color}`}></i>
@@ -71,6 +88,7 @@
                     <div className={`text-2xl font-black ${color}`}>
                         {Math.abs(rate).toFixed(1)} <span className="text-sm font-medium opacity-70">m/s</span>
                     </div>
+                    <div className="text-[10px] text-slate-400 font-medium">Vitesse Verticale</div>
                 </div>
             </div>
         );
@@ -82,12 +100,79 @@
         const [hasLocated, setHasLocated] = useState(false);
         const [selectedPlane, setSelectedPlane] = useState(null);
         const [planeDetails, setPlaneDetails] = useState(null);
-
+        const debounceRef = useRef(null);
         const mapRef = useRef(null);
         const userMarkerRef = useRef(null);
         const planesLayerRef = useRef(L.layerGroup());
 
-        // Récupération Photo (Uniquement si dispo)
+        // --- SVG DES ICÔNES ---
+        const svgJet = `<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>`;
+        const svgHeli = `<path d="M12 2L3 7v2h18V7L12 2zm-2 7v3H5v2h5v4.5L8 20v2h8v-2l-2-1.5V14h5v-2h-5V9H10z"/>`; // Forme simplifiée hélico
+
+        const loadPlanes = (lat, lon) => {
+            setLoading(true);
+            fetch(`/api/glass?lat=${lat}&lon=${lon}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data || !data.states) { setPlanes([]); setLoading(false); return; }
+
+                    const cleanPlanes = data.states
+                        .filter(d => d[5] && d[6])
+                        .map(d => ({
+                            id: d[0], 
+                            callsign: d[1].trim() || "N/A", 
+                            country: d[2],
+                            lon: d[5], lat: d[6], 
+                            altitude: d[7] || 0, velocity: d[9] || 0, heading: d[10] || 0,
+                            vertical_rate: d[11] || 0, 
+                            on_ground: d[8] || false,
+                            // NOUVELLES DONNÉES
+                            category: d[17] || 0, // 7 = Hélico
+                            squawk: d[6] || null, // Code transpondeur (7700 = Urgence)
+                            last_contact: d[4] || 0 // Timestamp dernier signal
+                        }));
+
+                    setPlanes(cleanPlanes);
+                    planesLayerRef.current.clearLayers();
+                    
+                    cleanPlanes.forEach(plane => {
+                        // 1. Détection Hélicoptère
+                        const isHeli = plane.category === 7;
+                        
+                        // 2. Détection Urgence (7700)
+                        const isEmergency = plane.squawk === "7700";
+                        const baseColor = isEmergency ? '#ef4444' : (plane.on_ground ? '#64748b' : '#006492');
+                        const pulseClass = isEmergency ? 'emergency-pulse' : '';
+
+                        // Choix du SVG
+                        const path = isHeli 
+                            ? `<path d="M12 4L3 9v2h18V9L12 4z M10 11v3H5v2h5v3.5l-2 1.5V22h8v-1l-2-1.5V16h5v-2h-5v-3H10z" />` // Path Hélico custom
+                            : `<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>`;
+
+                        const svg = `
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${baseColor}" stroke="white" stroke-width="1.5" style="transform: rotate(${plane.heading}deg); filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.3));">
+                                ${path}
+                            </svg>`;
+                        
+                        // On ajoute une div wrapper pour l'animation d'urgence
+                        const html = isEmergency 
+                            ? `<div class="emergency-pulse w-full h-full flex items-center justify-center">${svg}</div>`
+                            : svg;
+
+                        const icon = L.divIcon({ html: html, className: '', iconSize: [40, 40], iconAnchor: [20, 20] });
+
+                        L.marker([plane.lat, plane.lon], {icon: icon})
+                            .on('click', (e) => { 
+                                L.DomEvent.stopPropagation(e);
+                                setSelectedPlane(plane); 
+                            })
+                            .addTo(planesLayerRef.current);
+                    });
+                    setLoading(false);
+                })
+                .catch(() => setLoading(false));
+        };
+
         const fetchPlanePhoto = async (icaoHex) => {
             setPlaneDetails(null);
             try {
@@ -96,12 +181,11 @@
                 if (data.photos?.length > 0) {
                     setPlaneDetails({
                         photo: data.photos[0].thumbnail_large.src,
-                        reg: data.photos[0].reg,
-                        type: data.photos[0].plane_type,
-                        airline: data.photos[0].airline
+                        airline: data.photos[0].airline,
+                        type: data.photos[0].plane_type
                     });
                 }
-            } catch (err) { /* Silent fail */ } 
+            } catch (err) { } 
         };
 
         useEffect(() => {
@@ -109,20 +193,28 @@
                 mapRef.current = L.map('map', { zoomControl: false, attributionControl: false }).setView([46.22, 2.21], 5);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapRef.current);
                 planesLayerRef.current.addTo(mapRef.current);
+                mapRef.current.on('click', () => setSelectedPlane(null));
+
+                mapRef.current.on('moveend', () => {
+                    if (!hasLocated) return;
+                    if (debounceRef.current) clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                        const center = mapRef.current.getCenter();
+                        loadPlanes(center.lat, center.lng);
+                    }, 800);
+                });
             }
             lucide.createIcons();
-        }, []);
+        }, [hasLocated]);
 
         useEffect(() => { if(selectedPlane) fetchPlanePhoto(selectedPlane.id); }, [selectedPlane]);
 
         const startTracking = () => {
             if (!navigator.geolocation) return;
             setLoading(true);
-
             navigator.geolocation.getCurrentPosition(pos => {
                 const { latitude, longitude } = pos.coords;
                 mapRef.current.setView([latitude, longitude], 11);
-                
                 if (userMarkerRef.current) mapRef.current.removeLayer(userMarkerRef.current);
                 const userIcon = L.divIcon({
                     className: 'custom-div-icon',
@@ -130,42 +222,18 @@
                     iconSize: [24, 24]
                 });
                 userMarkerRef.current = L.marker([latitude, longitude], {icon: userIcon}).addTo(mapRef.current);
-                setHasLocated(true);
-
-                fetch(`/api/glass?lat=${latitude}&lon=${longitude}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (!data || !data.states) { setPlanes([]); setLoading(false); return; }
-
-                        const cleanPlanes = data.states
-                            .filter(d => d[5] && d[6])
-                            .map(d => ({
-                                id: d[0], callsign: d[1].trim() || "N/A", country: d[2],
-                                lon: d[5], lat: d[6], altitude: d[7] || 0, velocity: d[9] || 0, heading: d[10] || 0,
-                                vertical_rate: d[11] || 0, // VRAIE DONNÉE OPENSKY
-                                on_ground: d[8] || false
-                            }));
-
-                        setPlanes(cleanPlanes);
-                        planesLayerRef.current.clearLayers();
-                        
-                        cleanPlanes.forEach(plane => {
-                            // Style Avion
-                            const svg = `
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${plane.on_ground ? '#64748b' : '#006492'}" stroke="white" stroke-width="1.5" style="transform: rotate(${plane.heading}deg); filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.2));">
-                                    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-                                </svg>`;
-
-                            const icon = L.divIcon({ html: svg, className: '', iconSize: [36, 36], iconAnchor: [18, 18] });
-
-                            L.marker([plane.lat, plane.lon], {icon: icon})
-                                .on('click', () => { setSelectedPlane(plane); mapRef.current.panTo([plane.lat, plane.lon]); })
-                                .addTo(planesLayerRef.current);
-                        });
-                        setLoading(false);
-                    })
-                    .catch(() => setLoading(false));
+                setHasLocated(true); 
+                loadPlanes(latitude, longitude);
             }, () => setLoading(false));
+        };
+
+        const displayAirline = planeDetails?.airline || getAirlineName(selectedPlane?.callsign);
+
+        // Calcul du temps écoulé depuis le dernier signal
+        const getSignalAge = (ts) => {
+            const now = Math.floor(Date.now() / 1000);
+            const diff = now - ts;
+            return diff < 0 ? 0 : diff;
         };
 
         return (
@@ -176,7 +244,9 @@
                     <div className="absolute top-12 left-0 right-0 z-[1000] flex justify-center pointer-events-none">
                         <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-lg animate-in fade-in slide-in-from-top-4">
                             <div className={`w-2.5 h-2.5 rounded-full ${loading ? 'bg-m3-primary animate-ping' : 'bg-emerald-500'}`}></div>
-                            <span className="text-sm font-bold tracking-tight">{planes.length} appareils détectés</span>
+                            <span className="text-sm font-bold tracking-tight">
+                                {loading ? "Mise à jour zone..." : `${planes.length} appareils détectés`}
+                            </span>
                         </div>
                     </div>
                 )}
@@ -190,14 +260,16 @@
                         </div>
                     )}
 
-                    <div className={`card glass-panel w-full max-w-lg mx-auto pointer-events-auto transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) ${selectedPlane ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'} rounded-[36px] mb-2 shadow-2xl overflow-hidden`}>
+                    <div 
+                        className={`card glass-panel w-full max-w-lg mx-auto pointer-events-auto transition-all duration-300 card-enter ${selectedPlane ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'} rounded-[36px] mb-2 shadow-2xl overflow-hidden cursor-pointer active:scale-[0.98]`}
+                        onClick={() => setSelectedPlane(null)} 
+                    >
                         {selectedPlane && (
                             <div className="p-0 pb-6 relative">
-                                <button onClick={()=>setSelectedPlane(null)} className="absolute top-4 right-4 z-20 bg-black/10 backdrop-blur-md p-2 rounded-full text-slate-700 hover:bg-black/20">
-                                    <i data-lucide="x" className="w-5 h-5"></i>
-                                </button>
+                                <div className="absolute top-4 right-4 z-20 bg-white/50 backdrop-blur-md p-2 rounded-full text-slate-800 hover:bg-white shadow-sm">
+                                    <i data-lucide="x" className="w-6 h-6"></i>
+                                </div>
 
-                                {/* Photo Conditionnelle (Disparaît si absente) */}
                                 {planeDetails?.photo && (
                                     <div className="relative w-full h-48">
                                         <img src={planeDetails.photo} className="w-full h-full object-cover" alt="Avion" />
@@ -206,65 +278,60 @@
                                 )}
 
                                 <div className={`px-6 ${!planeDetails?.photo ? 'pt-8' : ''}`}>
-                                    {/* Header Info */}
                                     <div className="mb-6">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className="bg-m3-surface-variant text-slate-600 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">{selectedPlane.country}</span>
-                                            <span className="text-slate-400 text-xs font-mono">{selectedPlane.id}</span>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="bg-m3-surface-variant text-slate-600 px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">{selectedPlane.country}</span>
+                                                {/* BADGE D'URGENCE SI SQUAWK 7700 */}
+                                                {selectedPlane.squawk === "7700" && (
+                                                    <span className="bg-red-500 text-white px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest animate-pulse">URGENCE 7700</span>
+                                                )}
+                                            </div>
+                                            {/* SIGNAL INDICATOR */}
+                                            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                                <i data-lucide="signal" className="w-3 h-3"></i>
+                                                <span>{getSignalAge(selectedPlane.last_contact)}s</span>
+                                            </div>
                                         </div>
                                         <h2 className="text-4xl font-[850] text-m3-on-surface tracking-tighter leading-none">{selectedPlane.callsign}</h2>
-                                        <p className="text-m3-primary font-bold text-sm mt-1">{planeDetails?.airline || "Opérateur privé / Inconnu"}</p>
+                                        <p className="text-m3-primary font-bold text-sm mt-1 flex items-center gap-1">
+                                            {displayAirline}
+                                        </p>
                                     </div>
 
-                                    {/* Grille de Widgets (Bento Grid Style) */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        
-                                        {/* Widget 1 : Altitude */}
+                                    <div className="grid grid-cols-2 gap-3" onClick={(e) => e.stopPropagation()}> 
                                         <div className="p-4 rounded-3xl bg-white border border-slate-100 shadow-sm flex flex-col justify-between h-28">
                                             <div className="flex justify-between items-start">
                                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Altitude</span>
                                                 <i data-lucide="arrow-up" className="w-5 h-5 text-m3-primary"></i>
                                             </div>
-                                            <div>
-                                                <div className="text-2xl font-black text-slate-800">
-                                                    {Math.round(selectedPlane.altitude)} <span className="text-sm font-medium text-slate-400">m</span>
-                                                </div>
-                                            </div>
+                                            <div className="text-2xl font-black text-slate-800">{Math.round(selectedPlane.altitude)} <span className="text-sm font-medium text-slate-400">m</span></div>
                                         </div>
 
-                                        {/* Widget 2 : Vitesse */}
                                         <div className="p-4 rounded-3xl bg-white border border-slate-100 shadow-sm flex flex-col justify-between h-28">
                                             <div className="flex justify-between items-start">
                                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vitesse Sol</span>
                                                 <i data-lucide="zap" className="w-5 h-5 text-orange-500"></i>
                                             </div>
-                                            <div>
-                                                <div className="text-2xl font-black text-slate-800">
-                                                    {Math.round(selectedPlane.velocity * 3.6)} <span className="text-sm font-medium text-slate-400">km/h</span>
-                                                </div>
-                                            </div>
+                                            <div className="text-2xl font-black text-slate-800">{Math.round(selectedPlane.velocity * 3.6)} <span className="text-sm font-medium text-slate-400">km/h</span></div>
                                         </div>
 
-                                        {/* Widget 3 : Vario (Nouveau & Réel) */}
                                         <VarioWidget rate={selectedPlane.vertical_rate} />
 
-                                        {/* Widget 4 : Cap & Modèle */}
                                         <div className="p-4 rounded-3xl bg-slate-800 text-white shadow-sm flex flex-col justify-between h-28">
                                             <div className="flex justify-between items-start">
                                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Cap</span>
                                                 <i data-lucide="compass" className="w-5 h-5 text-slate-300"></i>
                                             </div>
                                             <div className="flex items-end justify-between">
-                                                <div className="text-2xl font-black">
-                                                    {Math.round(selectedPlane.heading)}°
-                                                </div>
+                                                <div className="text-2xl font-black">{Math.round(selectedPlane.heading)}°</div>
                                                 <div className="text-[10px] text-slate-400 font-medium max-w-[60px] truncate text-right">
-                                                    {planeDetails?.type || "Type Inconnu"}
+                                                    {selectedPlane.category === 7 ? "Hélico" : (planeDetails?.type || "Standard")}
                                                 </div>
                                             </div>
                                         </div>
-
                                     </div>
+                                    <p className="text-center text-xs text-slate-300 mt-4 font-medium uppercase tracking-widest pb-2">Appuyez pour fermer</p>
                                 </div>
                             </div>
                         )}
