@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SkyRadar - Material You</title>
+    <title>SkyRadar - Pixel Pro</title>
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -17,33 +17,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
 
     <style>
-        /* Configuration style "Android / Pixel" */
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: #f0f4f8; 
-            overflow: hidden; /* Empêche le scroll élastique sur mobile */
-        }
-        
-        /* La Carte en fond */
+        body { font-family: 'Inter', sans-serif; background-color: #f0f4f8; overflow: hidden; }
         #map { height: 100vh; width: 100%; z-index: 0; }
-
-        /* Custom Scrollbar invisible */
+        .glass-panel { background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        /* Effet Glassmorphism léger pour les éléments flottants */
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-
-        /* Animation d'entrée du Bottom Sheet */
-        @keyframes slideUp {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
     </style>
     
     <script>
@@ -53,15 +30,10 @@
                     colors: {
                         'm3-surface': '#fdfcff',
                         'm3-surface-container': '#f0f4f8',
-                        'm3-primary': '#006492', // Bleu Pixel
-                        'm3-on-primary': '#ffffff',
+                        'm3-primary': '#006492',
                         'm3-tertiary': '#6b5778',
-                        'm3-error': '#ba1a1a',
                     },
-                    borderRadius: {
-                        '4xl': '32px',
-                        '5xl': '40px', 
-                    }
+                    borderRadius: { '4xl': '32px', '5xl': '40px' }
                 }
             }
         }
@@ -73,38 +45,16 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- COMPOSANT : BADGE D'ÉTAT (Top Bar) ---
-    const StatusPill = ({ count, loading }) => (
-        <div className="absolute top-12 left-0 right-0 z-[1000] flex justify-center pointer-events-none">
-            <div className="glass-panel shadow-sm px-5 py-2 rounded-full flex items-center gap-3 border border-white/50 animate-in fade-in slide-in-from-top-4 duration-500">
-                {loading ? (
-                    <div className="w-2 h-2 rounded-full bg-m3-primary animate-ping"></div>
-                ) : (
-                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                )}
-                <span className="text-sm font-medium text-slate-700">
-                    {loading ? "Recherche en cours..." : `${count} appareils à proximité`}
-                </span>
-            </div>
-        </div>
-    );
-
-    // --- COMPOSANT : IMAGE AVION ---
     const PlaneImage = ({ details, loading }) => {
-        if (loading) return (
-            <div className="w-full h-48 bg-slate-200 animate-pulse rounded-[28px] mb-4"></div>
-        );
-        
+        if (loading) return <div className="w-full h-48 bg-slate-200 animate-pulse rounded-[28px] mb-4"></div>;
         if (!details?.photo) return (
             <div className="w-full h-32 bg-slate-100 rounded-[28px] mb-4 flex flex-col items-center justify-center text-slate-400 border border-slate-200">
-                <i data-lucide="plane" className="w-8 h-8 opacity-20 mb-2"></i>
-                <span className="text-xs font-medium">Pas d'image</span>
+                <i data-lucide="plane" className="w-8 h-8 opacity-20 mb-2"></i><span className="text-xs font-medium">Pas d'image</span>
             </div>
         );
-
         return (
             <div className="relative w-full h-56 rounded-[28px] overflow-hidden mb-4 shadow-sm group">
-                <img src={details.photo} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Avion" />
+                <img src={details.photo} className="w-full h-full object-cover" alt="Avion" />
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
                     <p className="text-white text-xs font-medium opacity-90">{details.airline}</p>
                 </div>
@@ -112,7 +62,6 @@
         );
     };
 
-    // --- APPLICATION PRINCIPALE ---
     const App = () => {
         const [planes, setPlanes] = useState([]);
         const [loading, setLoading] = useState(false);
@@ -125,10 +74,8 @@
         const mapRef = useRef(null);
         const userMarkerRef = useRef(null);
         const planesLayerRef = useRef(L.layerGroup());
-
         const activePlane = selectedPlane || nearestPlane;
 
-        // --- OUTILS ---
         const getDistance = (lat1, lon1, lat2, lon2) => {
             const R = 6371e3; 
             const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
@@ -154,28 +101,17 @@
             finally { setLoadingDetails(false); }
         };
 
-        // --- INIT CARTE ---
         useEffect(() => {
             if (!mapRef.current) {
-                mapRef.current = L.map('map', { 
-                    zoomControl: false, 
-                    attributionControl: false 
-                }).setView([46.22, 2.21], 5);
-                
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                    maxZoom: 19
-                }).addTo(mapRef.current);
-                
+                mapRef.current = L.map('map', { zoomControl: false, attributionControl: false }).setView([46.22, 2.21], 5);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapRef.current);
                 planesLayerRef.current.addTo(mapRef.current);
             }
             lucide.createIcons();
         }, []);
 
-        useEffect(() => {
-            if(activePlane) fetchPlanePhoto(activePlane.id);
-        }, [activePlane]);
+        useEffect(() => { if(activePlane) fetchPlanePhoto(activePlane.id); }, [activePlane]);
 
-        // --- LOGIQUE TRACKING ---
         const startTracking = () => {
             if (!navigator.geolocation) return;
             setLoading(true);
@@ -184,20 +120,18 @@
                 const { latitude, longitude } = pos.coords;
                 mapRef.current.setView([latitude, longitude], 10);
                 
-                // Marqueur utilisateur (Design moderne)
                 if (userMarkerRef.current) mapRef.current.removeLayer(userMarkerRef.current);
                 const userIcon = L.divIcon({
                     className: 'custom-div-icon',
                     html: `<div style="background-color:#006492; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow:0 0 10px rgba(0,0,0,0.3);"></div>`,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10]
+                    iconSize: [20, 20]
                 });
                 userMarkerRef.current = L.marker([latitude, longitude], {icon: userIcon}).addTo(mapRef.current);
 
                 setHasLocated(true);
 
-                // Fetch Backend
-                fetch(`/api/opensky?lat=${latitude}&lon=${longitude}`)
+                // --- CORRECTION ICI : Appel vers /api/glass ---
+                fetch(`/api/glass?lat=${latitude}&lon=${longitude}`)
                     .then(res => res.json())
                     .then(data => {
                         if (!data || !data.states) { setPlanes([]); setLoading(false); return; }
@@ -206,39 +140,26 @@
                             .filter(d => d[5] && d[6])
                             .map(d => ({
                                 id: d[0], callsign: d[1].trim() || "N/A", country: d[2],
-                                lon: d[5], lat: d[6], altitude: d[7] || 0, velocity: d[9] || 0,
+                                lon: d[5], lat: d[6], altitude: d[7] || 0, velocity: d[9] || 0, heading: d[10] || 0
                             }));
 
                         setPlanes(cleanPlanes);
                         planesLayerRef.current.clearLayers();
                         
                         let minD = Infinity, closest = null;
-
                         cleanPlanes.forEach(plane => {
                             const d = getDistance(latitude, longitude, plane.lat, plane.lon);
                             if(d < minD) { minD = d; closest = {...plane, dist: d}; }
 
-                            // Icone Avion Rotative
-                            const rotation = plane.heading || 0; // Si dispo (index 10) sinon 0
                             const planeIcon = L.divIcon({
-                                html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#006492" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(${plane.heading || 0}deg); filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.2));"><path d="M2 12h20"/><path d="m13 2 9 10-9 10"/><path d="m10 8 3 4-3 4"/></svg>`,
-                                className: 'plane-icon-marker',
-                                iconSize: [24, 24],
-                                iconAnchor: [12, 12]
+                                html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#006492" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(${plane.heading}deg); filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.2));"><path d="M2 12h20"/><path d="m13 2 9 10-9 10"/><path d="m10 8 3 4-3 4"/></svg>`,
+                                className: 'plane-icon-marker', iconSize: [24, 24], iconAnchor: [12, 12]
                             });
 
-                            // Fallback simple circle si SVG trop lourd, mais ici on tente le SVG
-                            const marker = L.circleMarker([plane.lat, plane.lon], {
-                                radius: 8, fillColor: '#006492', color: 'white', weight: 2, fillOpacity: 1
-                            });
-
-                            marker.on('click', () => {
-                                setSelectedPlane({...plane, dist: d});
-                                mapRef.current.setView([plane.lat, plane.lon], 11);
-                            });
+                            const marker = L.marker([plane.lat, plane.lon], {icon: planeIcon})
+                                .on('click', () => { setSelectedPlane({...plane, dist: d}); mapRef.current.setView([plane.lat, plane.lon], 11); });
                             marker.addTo(planesLayerRef.current);
                         });
-
                         setNearestPlane(closest);
                         setLoading(false);
                     })
@@ -246,109 +167,65 @@
             }, () => setLoading(false));
         };
 
-        const closeDetails = () => setSelectedPlane(null);
-
         return (
             <div className="relative h-screen w-full">
                 <div id="map"></div>
                 
-                {/* 1. STATUS BAR */}
-                {hasLocated && <StatusPill count={planes.length} loading={loading} />}
+                {hasLocated && (
+                    <div className="absolute top-12 left-0 right-0 z-[1000] flex justify-center pointer-events-none">
+                        <div className="glass-panel shadow-sm px-5 py-2 rounded-full flex items-center gap-3 border border-white/50 animate-in fade-in slide-in-from-top-4">
+                            <div className={`w-2 h-2 rounded-full ${loading ? 'bg-m3-primary animate-ping' : 'bg-emerald-500'}`}></div>
+                            <span className="text-sm font-medium text-slate-700">{loading ? "Recherche..." : `${planes.length} appareils`}</span>
+                        </div>
+                    </div>
+                )}
 
-                {/* 2. UI OVERLAY */}
                 <div className="absolute inset-x-0 bottom-0 z-[1001] p-4 pointer-events-none flex flex-col justify-end h-full">
-                    
-                    {/* BOUTON FLOTTANT (FAB) */}
                     <div className="flex justify-end mb-4 pointer-events-auto">
-                        <button 
-                            onClick={startTracking} 
-                            className="bg-m3-tertiary text-white h-16 w-16 rounded-[20px] shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-300"
-                        >
+                        <button onClick={startTracking} className="bg-m3-tertiary text-white h-16 w-16 rounded-[20px] shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all">
                             <i data-lucide={loading ? "loader-2" : "radar"} className={loading ? "animate-spin w-7 h-7" : "w-7 h-7"}></i>
                         </button>
                     </div>
 
-                    {/* BOTTOM SHEET */}
-                    <div className={`card glass-panel w-full max-w-lg mx-auto pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-                        activePlane ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'
-                    } rounded-t-[32px] rounded-b-[32px] mb-2 p-5 shadow-2xl border border-white/60`}>
-                        
-                        {activePlane ? (
+                    <div className={`card glass-panel w-full max-w-lg mx-auto pointer-events-auto transition-all duration-500 ${activePlane ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'} rounded-[32px] mb-2 p-5 shadow-2xl border border-white/60`}>
+                        {activePlane && (
                             <div>
-                                {/* Header: Drag Handle & Close */}
                                 <div className="flex justify-center mb-4 relative">
                                     <div className="w-12 h-1.5 bg-slate-300 rounded-full"></div>
-                                    {selectedPlane && (
-                                        <button onClick={closeDetails} className="absolute right-0 -top-2 p-2 bg-slate-100 rounded-full text-slate-500">
-                                            <i data-lucide="x" className="w-4 h-4"></i>
-                                        </button>
-                                    )}
+                                    {selectedPlane && <button onClick={()=>setSelectedPlane(null)} className="absolute right-0 -top-2 p-2 bg-slate-100 rounded-full"><i data-lucide="x" className="w-4 h-4"></i></button>}
                                 </div>
-
                                 <PlaneImage details={planeDetails} loading={loadingDetails} />
-
                                 <div className="space-y-1">
                                     <div className="flex justify-between items-end">
                                         <div>
-                                            <h2 className="text-3xl font-[800] text-slate-800 tracking-tight leading-none">
-                                                {activePlane.callsign}
-                                            </h2>
+                                            <h2 className="text-3xl font-[800] text-slate-800 tracking-tight leading-none">{activePlane.callsign}</h2>
                                             <p className="text-slate-500 font-medium mt-1">{activePlane.country}</p>
                                         </div>
                                         <div className="bg-m3-surface-container px-4 py-2 rounded-2xl">
-                                            <span className="text-xl font-bold text-m3-primary">
-                                                {Math.round(activePlane.velocity * 3.6)}
-                                            </span>
-                                            <span className="text-xs font-bold text-slate-400 ml-1">KM/H</span>
+                                            <span className="text-xl font-bold text-m3-primary">{Math.round(activePlane.velocity * 3.6)}</span><span className="text-xs font-bold text-slate-400 ml-1">KM/H</span>
                                         </div>
                                     </div>
-
-                                    {/* Métriques style Android Widget */}
                                     <div className="grid grid-cols-2 gap-3 mt-6">
-                                        <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between h-24">
-                                            <div className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                                                <i data-lucide="arrow-up" className="w-3 h-3"></i> Altitude
-                                            </div>
-                                            <div className="text-2xl font-bold text-slate-700">
-                                                {Math.round(activePlane.altitude)} <span className="text-sm font-normal text-slate-400">m</span>
-                                            </div>
+                                        <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm h-24 flex flex-col justify-between">
+                                            <div className="text-slate-400 text-xs font-bold uppercase flex items-center gap-1"><i data-lucide="arrow-up" className="w-3 h-3"></i> Altitude</div>
+                                            <div className="text-2xl font-bold text-slate-700">{Math.round(activePlane.altitude)} <span className="text-sm font-normal text-slate-400">m</span></div>
                                         </div>
-                                        <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between h-24">
-                                            <div className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                                                <i data-lucide="map-pin" className="w-3 h-3"></i> Distance
-                                            </div>
-                                            <div className="text-2xl font-bold text-slate-700">
-                                                {(activePlane.dist / 1000).toFixed(1)} <span className="text-sm font-normal text-slate-400">km</span>
-                                            </div>
+                                        <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm h-24 flex flex-col justify-between">
+                                            <div className="text-slate-400 text-xs font-bold uppercase flex items-center gap-1"><i data-lucide="map-pin" className="w-3 h-3"></i> Distance</div>
+                                            <div className="text-2xl font-bold text-slate-700">{(activePlane.dist / 1000).toFixed(1)} <span className="text-sm font-normal text-slate-400">km</span></div>
                                         </div>
                                     </div>
-                                    
-                                    {/* Info Tech */}
-                                    {planeDetails?.type && (
-                                        <div className="mt-4 flex items-center gap-2 text-sm text-slate-500 justify-center">
-                                            <i data-lucide="info" className="w-4 h-4"></i>
-                                            <span>Modèle : <strong className="text-slate-700">{planeDetails.type}</strong></span>
-                                        </div>
-                                    )}
                                 </div>
-                            </div>
-                        ) : (
-                            // État vide (Invitation)
-                            <div className="text-center py-8">
-                                <p className="text-slate-500 font-medium">Scannez pour détecter les vols</p>
                             </div>
                         )}
                     </div>
-
-                    {/* Invite Initiale si pas encore localisé */}
+                    
                     {!hasLocated && !loading && (
                         <div className="absolute bottom-10 left-4 right-4 pointer-events-auto">
                             <div className="card glass-panel p-6 rounded-[32px] shadow-2xl text-center">
                                 <h1 className="text-2xl font-bold text-slate-800 mb-2">Radar Aérien</h1>
                                 <p className="text-slate-500 mb-6">Optimisé pour Pixel. Trouvez les avions au-dessus de vous.</p>
-                                <button onClick={startTracking} className="bg-m3-primary text-white w-full py-4 rounded-full font-bold text-lg shadow-lg active:scale-95 transition-transform">
-                                    Scanner maintenant
-                                </button>
+                                <button onClick={startTracking} className="bg-m3-primary text-white w-full py-4 rounded-full font-bold text-lg shadow-lg active:scale-95 transition-transform">Scanner maintenant</button>
                             </div>
                         </div>
                     )}
