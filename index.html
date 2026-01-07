@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SkyRadar - Auto Start</title>
+    <title>SkyRadar - 100% Réel</title>
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -22,7 +22,6 @@
         @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
         .emergency-pulse { animation: pulse-red 1.5s infinite; border-radius: 50%; }
-        /* Overlay de chargement initial */
         .init-loader { position: fixed; inset: 0; z-index: 5000; background: #f0f4f8; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s; }
         .hide-loader { opacity: 0; pointer-events: none; }
     </style>
@@ -39,7 +38,6 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- UTILS ---
     const getAirlineName = (callsign) => {
         if (!callsign || callsign.length < 3) return "Aviation Générale";
         const code = callsign.substring(0, 3).toUpperCase();
@@ -64,25 +62,38 @@
         const [planes, setPlanes] = useState([]);
         const [selectedPlane, setSelectedPlane] = useState(null);
         const [planeDetails, setPlaneDetails] = useState(null);
-        
-        // États de chargement
-        const [initPhase, setInitPhase] = useState(true); // Vrai chargement initial (écran blanc)
-        const [loading, setLoading] = useState(false); // Chargement API discret
+        const [initPhase, setInitPhase] = useState(true);
+        const [loading, setLoading] = useState(false);
         const [gpsError, setGpsError] = useState(false);
+        
+        // NOUVEL ÉTAT : Erreur API
+        const [apiError, setApiError] = useState(false);
 
         const mapRef = useRef(null);
         const userMarkerRef = useRef(null);
         const planesLayerRef = useRef(L.layerGroup());
         const debounceRef = useRef(null);
 
-        // --- CHARGEMENT API (Lat/Lon ou Zone) ---
         const fetchPlanes = (params) => {
             setLoading(true);
-            // params peut être "lat=...&lon=..." OU "lamin=...&lomax=..."
+            setApiError(false); // On reset l'erreur avant de chercher
+
             fetch(`/api/glass?${params}`)
-                .then(res => res.json())
+                .then(res => {
+                    // Si le backend renvoie 500 ou 502, c'est une erreur
+                    if (!res.ok) throw new Error("Erreur Backend");
+                    return res.json();
+                })
                 .then(data => {
-                    if (!data || !data.states) { setPlanes([]); setLoading(false); return; }
+                    if (!data || !data.states) { 
+                        // Pas d'avions, mais pas d'erreur technique
+                        setPlanes([]); 
+                        setLoading(false); 
+                        // On vide la carte
+                        planesLayerRef.current.clearLayers();
+                        return; 
+                    }
+
                     const cleanPlanes = data.states.filter(d => d[5] && d[6]).map(d => ({
                         id: d[0], callsign: d[1].trim() || "N/A", country: d[2],
                         lon: d[5], lat: d[6], altitude: d[7] || 0, velocity: d[9] || 0, heading: d[10] || 0,
@@ -109,75 +120,54 @@
                     });
                     setLoading(false);
                 })
-                .catch(() => setLoading(false));
+                .catch((err) => {
+                    console.error(err);
+                    setLoading(false);
+                    setApiError(true); // Déclenche le badge rouge
+                    setPlanes([]); // On vide la liste car on ne sait pas ce qui est vrai
+                });
         };
 
-        // --- INITIALISATION UNIQUE (SEQ: GPS -> MAP -> LOAD) ---
         useEffect(() => {
-            if (mapRef.current) return; // Déjà init
-
-            // 1. Demande GPS immédiate
+            if (mapRef.current) return;
             navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const { latitude, longitude } = pos.coords;
-                    initMap(latitude, longitude, true); // True = GPS réussi
-                },
-                (err) => {
-                    console.warn("GPS Refusé", err);
-                    setGpsError(true);
-                    initMap(46.22, 2.21, false); // Vue France par défaut
-                },
+                (pos) => { const { latitude, longitude } = pos.coords; initMap(latitude, longitude, true); },
+                (err) => { setGpsError(true); initMap(46.22, 2.21, false); },
                 { enableHighAccuracy: true, timeout: 5000 }
             );
 
             const initMap = (lat, lon, isUserLocation) => {
-                // 2. Création de la carte centrée DIRECTEMENT au bon endroit
                 const zoomLevel = isUserLocation ? 11 : 6;
                 mapRef.current = L.map('map', { zoomControl: false, attributionControl: false }).setView([lat, lon], zoomLevel);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapRef.current);
                 planesLayerRef.current.addTo(mapRef.current);
                 mapRef.current.on('click', () => setSelectedPlane(null));
 
-                // 3. Si c'est l'utilisateur, on met le marqueur bleu
                 if (isUserLocation) {
-                    const userIcon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: `<div style="background-color:#006492; width:20px; height:20px; border-radius:50%; border:4px solid white; box-shadow:0 4px 15px rgba(0,100,146,0.4);"></div>`,
-                        iconSize: [24, 24]
-                    });
+                    const userIcon = L.divIcon({ className: 'custom-div-icon', html: `<div style="background-color:#006492; width:20px; height:20px; border-radius:50%; border:4px solid white; box-shadow:0 4px 15px rgba(0,100,146,0.4);"></div>`, iconSize: [24, 24] });
                     userMarkerRef.current = L.marker([lat, lon], {icon: userIcon}).addTo(mapRef.current);
-                    
-                    // 4. PREMIER CHARGEMENT (Appel précis Lat/Lon pour caler le backend)
                     fetchPlanes(`lat=${lat}&lon=${lon}`);
                 }
 
-                // 5. Activation des événements de mouvement (après init)
                 mapRef.current.on('moveend', () => {
                     if (debounceRef.current) clearTimeout(debounceRef.current);
                     debounceRef.current = setTimeout(() => {
                         const b = mapRef.current.getBounds();
-                        // Appel API avec les coins de la carte
                         fetchPlanes(`lamin=${b.getSouth()}&lomin=${b.getWest()}&lamax=${b.getNorth()}&lomax=${b.getEast()}`);
                     }, 800);
                 });
-
-                // Fin de l'écran de chargement
                 setTimeout(() => setInitPhase(false), 500);
                 lucide.createIcons();
             };
         }, []);
 
-        useEffect(() => { if(selectedPlane) { /* Fetch photo logic here if needed */ } }, [selectedPlane]);
-
-        // Fonction pour le bouton manuel (si GPS refusé au début)
+        useEffect(() => { if(selectedPlane) { /* fetch photo */ } }, [selectedPlane]);
         const retryGps = () => { window.location.reload(); };
-
         const displayAirline = getAirlineName(selectedPlane?.callsign);
         const getSignalAge = (ts) => { const diff = Math.floor(Date.now()/1000) - ts; return diff < 0 ? 0 : diff; };
 
         return (
             <div className="relative h-screen w-full font-sans text-slate-800">
-                {/* ECRAN DE CHARGEMENT INITIAL */}
                 <div className={`init-loader ${!initPhase ? 'hide-loader' : ''}`}>
                     <div className="w-12 h-12 border-4 border-m3-primary border-t-transparent rounded-full animate-spin mb-4"></div>
                     <p className="text-m3-primary font-bold animate-pulse">Localisation...</p>
@@ -185,18 +175,28 @@
 
                 <div id="map"></div>
                 
-                {/* Indicateur Haut */}
-                <div className="absolute top-12 left-0 right-0 z-[1000] flex justify-center pointer-events-none">
-                    <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-lg animate-in fade-in slide-in-from-top-4">
-                        <div className={`w-2.5 h-2.5 rounded-full ${loading ? 'bg-m3-primary animate-ping' : 'bg-emerald-500'}`}></div>
-                        <span className="text-sm font-bold tracking-tight">
-                            {loading ? "Scan de la zone..." : `${planes.length} appareils`}
-                        </span>
-                    </div>
+                <div className="absolute top-12 left-0 right-0 z-[1000] flex flex-col items-center gap-2 pointer-events-none">
+                    
+                    {/* CAS 1 : TOUT VA BIEN */}
+                    {!apiError && (
+                        <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-lg animate-in fade-in slide-in-from-top-4">
+                            <div className={`w-2.5 h-2.5 rounded-full ${loading ? 'bg-m3-primary animate-ping' : 'bg-emerald-500'}`}></div>
+                            <span className="text-sm font-bold tracking-tight">
+                                {loading ? "Recherche radar..." : `${planes.length} appareils`}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* CAS 2 : ERREUR API (Limites OpenSky) */}
+                    {apiError && (
+                        <div className="bg-red-500 text-white px-6 py-3 rounded-full flex items-center gap-3 shadow-xl animate-bounce">
+                            <i data-lucide="wifi-off" className="w-4 h-4"></i>
+                            <span className="text-sm font-bold">Signal Radar Perdu (API Saturée)</span>
+                        </div>
+                    )}
                 </div>
 
                 <div className="absolute inset-x-0 bottom-0 z-[1001] p-4 pointer-events-none flex flex-col justify-end h-full">
-                    {/* Bouton Retry GPS si erreur */}
                     {gpsError && !selectedPlane && (
                         <div className="flex justify-end mb-6 pointer-events-auto">
                             <button onClick={retryGps} className="bg-red-500 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 font-bold hover:scale-105 transition-all">
@@ -205,7 +205,6 @@
                         </div>
                     )}
 
-                    {/* Carte Détail */}
                     <div className={`card glass-panel w-full max-w-lg mx-auto pointer-events-auto transition-all duration-300 card-enter ${selectedPlane ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'} rounded-[36px] mb-2 shadow-2xl overflow-hidden cursor-pointer active:scale-[0.98]`} onClick={() => setSelectedPlane(null)}>
                         {selectedPlane && (
                             <div className="p-0 pb-6 relative">
